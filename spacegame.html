@@ -15,27 +15,30 @@
         margin: 0;
         background: #111;
       }
-      #upgrades {
+      #info {
         position: absolute;
         top: 10px;
-        right: 10px;
+        left: 10px;
         color: white;
+        font-family: Arial;
       }
     </style>
   </head>
   <body>
     <canvas id="gameCanvas" width="800" height="600"></canvas>
-    <div id="upgrades">
-      <button onclick="upgradeRadar()">Upgrade Radar (50)</button>
-      <button onclick="upgradeFighters()">Upgrade Fighters (50)</button>
-      <button onclick="upgradeMiners()">Upgrade Miners (50)</button>
+    <div id="info">
+      <div>Resources: <span id="resources">0</span></div>
+      <div>Fighters: <span id="fighters">0</span> (F to upgrade)</div>
+      <div>Miners: <span id="miners">0</span> (M to upgrade)</div>
+      <div>Radar: <span id="radar">0</span> (R to upgrade)</div>
     </div>
 
     <script>
       const canvas = document.getElementById("gameCanvas");
       const ctx = canvas.getContext("2d");
+      const WORLD_WIDTH = 2000;
+      const WORLD_HEIGHT = 2000;
 
-      // Game objects
       class GameObject {
         constructor(x, y, size, color) {
           this.x = x;
@@ -77,8 +80,8 @@
         }
 
         move(dx, dy) {
-          this.x = Math.max(20, Math.min(canvas.width - 20, this.x + dx));
-          this.y = Math.max(20, Math.min(canvas.height - 20, this.y + dy));
+          this.x = Math.max(20, Math.min(WORLD_WIDTH - 20, this.x + dx));
+          this.y = Math.max(20, Math.min(WORLD_HEIGHT - 20, this.y + dy));
         }
       }
 
@@ -168,12 +171,20 @@
           super(x, y, 10, "gray");
           this.resources = 50;
         }
+
+        draw() {
+          super.draw();
+          ctx.fillStyle = "white";
+          ctx.font = "10px Arial";
+          ctx.fillText(this.resources, this.x - 5, this.y - 15);
+        }
       }
 
       class Enemy extends GameObject {
         constructor(x, y) {
           super(x, y, 8, "red");
           this.health = 10;
+          this.maxHealth = 10;
         }
 
         update() {
@@ -185,10 +196,26 @@
             this.y += (dy / distance) * 1.5;
           }
         }
+
+        draw() {
+          super.draw();
+          // Draw health bar
+          const barWidth = 20;
+          const barHeight = 3;
+          ctx.fillStyle = "gray";
+          ctx.fillRect(this.x - barWidth / 2, this.y - 15, barWidth, barHeight);
+          ctx.fillStyle = "green";
+          ctx.fillRect(
+            this.x - barWidth / 2,
+            this.y - 15,
+            barWidth * (this.health / this.maxHealth),
+            barHeight
+          );
+        }
       }
 
       // Game initialization
-      const capitalShip = new CapitalShip(canvas.width / 2, canvas.height / 2);
+      const capitalShip = new CapitalShip(WORLD_WIDTH / 2, WORLD_HEIGHT / 2);
       let fighters = [];
       let miners = [];
       let asteroids = [];
@@ -222,11 +249,11 @@
       }
 
       // Spawn initial asteroids
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 10; i++) {
         asteroids.push(
           new Asteroid(
-            Math.random() * canvas.width,
-            Math.random() * canvas.height
+            Math.random() * WORLD_WIDTH,
+            Math.random() * WORLD_HEIGHT
           )
         );
       }
@@ -246,6 +273,12 @@
         if (keys["ArrowRight"] || keys["d"])
           capitalShip.move(capitalShip.speed, 0);
 
+        // Handle upgrades
+        if (keys["f"]) upgradeFighters();
+        if (keys["m"]) upgradeMiners();
+        if (keys["r"]) upgradeRadar();
+
+        // Draw objects
         capitalShip.draw();
         if (Math.random() < 0.05 && capitalShip.fighterCount < 10)
           capitalShip.manufacture("fighter");
@@ -272,11 +305,11 @@
 
         // Update and draw asteroids
         asteroids.forEach((a) => a.draw());
-        if (Math.random() < 0.02 && asteroids.length < 10) {
+        if (Math.random() < 0.02 && asteroids.length < 20) {
           asteroids.push(
             new Asteroid(
-              Math.random() * canvas.width,
-              Math.random() * canvas.height
+              Math.random() * WORLD_WIDTH,
+              Math.random() * WORLD_HEIGHT
             )
           );
         }
@@ -285,8 +318,8 @@
         if (Math.random() < 0.01 && enemies.length < 5) {
           enemies.push(
             new Enemy(
-              Math.random() > 0.5 ? 0 : canvas.width,
-              Math.random() * canvas.height
+              Math.random() > 0.5 ? WORLD_WIDTH : 0,
+              Math.random() * WORLD_HEIGHT
             )
           );
         }
@@ -296,33 +329,30 @@
           e.draw();
         });
 
-        // Draw radar
+        // Draw radar rings
         ctx.strokeStyle = "rgba(0, 255, 0, 0.3)";
-        ctx.beginPath();
-        ctx.arc(
-          capitalShip.x,
-          capitalShip.y,
-          capitalShip.radarRange,
-          0,
-          Math.PI * 2
-        );
-        ctx.stroke();
+        for (let i = 1; i <= 4; i++) {
+          ctx.beginPath();
+          ctx.arc(
+            capitalShip.x,
+            capitalShip.y,
+            capitalShip.radarRange * (i / 4),
+            0,
+            Math.PI * 2
+          );
+          ctx.stroke();
+        }
 
-        // Draw info
-        ctx.fillStyle = "white";
-        ctx.font = "16px Arial";
-        ctx.fillText(`Resources: ${capitalShip.resources}`, 10, 20);
-        ctx.fillText(
-          `Fighters: ${fighters.length} (Power: ${fighters[0]?.power || 1})`,
-          10,
-          40
-        );
-        ctx.fillText(
-          `Miners: ${miners.length} (Speed: ${miners[0]?.speed || 2})`,
-          10,
-          60
-        );
-        ctx.fillText(`Radar Range: ${capitalShip.radarRange}`, 10, 80);
+        // Update UI
+        document.getElementById("resources").textContent =
+          capitalShip.resources;
+        document.getElementById("fighters").textContent = `${
+          fighters.length
+        } (Power: ${fighters[0]?.power || 1})`;
+        document.getElementById("miners").textContent = `${
+          miners.length
+        } (Speed: ${miners[0]?.speed || 2})`;
+        document.getElementById("radar").textContent = capitalShip.radarRange;
 
         requestAnimationFrame(gameLoop);
       }
