@@ -22,16 +22,29 @@
         color: white;
         font-family: Arial;
       }
-      #warnings {
+      #waveWarning {
         position: absolute;
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
         color: red;
         font-family: Arial;
-        font-size: 20px;
+        font-size: 24px;
         text-align: center;
         pointer-events: none;
+        display: none;
+      }
+      #gameOver {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        color: red;
+        font-family: Arial;
+        font-size: 36px;
+        text-align: center;
+        pointer-events: none;
+        display: none;
       }
     </style>
   </head>
@@ -42,8 +55,15 @@
       <div>Fighters: <span id="fighters">0</span> (F to upgrade, B to buy)</div>
       <div>Miners: <span id="miners">0</span> (M to upgrade, N to buy)</div>
       <div>Radar: <span id="radar">0</span> (R to upgrade)</div>
+      <div>
+        Health: <span id="health">0</span> / <span id="maxHealth">0</span>
+      </div>
+      <div>
+        Shield: <span id="shield">0</span> / <span id="maxShield">0</span>
+      </div>
     </div>
-    <div id="warnings"></div>
+    <div id="waveWarning">Enemy Wave Incoming!</div>
+    <div id="gameOver">Game Over!</div>
 
     <script>
       const canvas = document.getElementById("gameCanvas");
@@ -83,10 +103,15 @@
         constructor(x, y) {
           super(x, y, 20, "cyan");
           this.resources = 100;
-          this.fighterCount = 0;
-          this.minerCount = 0;
+          this.fighterCount = 1; // Start with 1 fighter
+          this.minerCount = 1; // Start with 1 miner
           this.radarRange = 200;
           this.speed = 3;
+          this.health = 100;
+          this.maxHealth = 100;
+          this.shield = 50;
+          this.maxShield = 50;
+          this.shieldRegenRate = 0.1;
         }
 
         manufacture(type) {
@@ -100,6 +125,46 @@
         move(dx, dy) {
           this.x = Math.max(20, Math.min(WORLD_WIDTH - 20, this.x + dx));
           this.y = Math.max(20, Math.min(WORLD_HEIGHT - 20, this.y + dy));
+        }
+
+        takeDamage(amount) {
+          if (this.shield >= amount) {
+            this.shield -= amount;
+          } else {
+            const remainingDamage = amount - this.shield;
+            this.shield = 0;
+            this.health -= remainingDamage;
+          }
+          if (this.health <= 0) {
+            this.health = 0;
+            gameOver = true;
+          }
+        }
+
+        regenerateShield() {
+          if (this.shield < this.maxShield) {
+            this.shield = Math.min(
+              this.maxShield,
+              this.shield + this.shieldRegenRate
+            );
+          }
+        }
+
+        draw(cameraX, cameraY) {
+          super.draw(cameraX, cameraY);
+          if (this.shield > 0) {
+            ctx.strokeStyle = "blue";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(
+              this.x - cameraX,
+              this.y - cameraY,
+              this.size + 2,
+              0,
+              Math.PI * 2
+            );
+            ctx.stroke();
+          }
         }
       }
 
@@ -213,8 +278,9 @@
 
       class Asteroid extends GameObject {
         constructor(x, y) {
-          super(x, y, 10, "gray");
-          this.resources = 50;
+          const size = Math.random() * 10 + 5; // 5-15
+          super(x, y, size, "gray");
+          this.resources = size * 10; // 50-150 based on size
         }
 
         draw(cameraX, cameraY) {
@@ -222,7 +288,7 @@
           ctx.fillStyle = "white";
           ctx.font = "10px Arial";
           ctx.fillText(
-            this.resources,
+            Math.floor(this.resources),
             this.x - cameraX - 5,
             this.y - cameraY - 15
           );
@@ -243,6 +309,8 @@
           if (distance > 20) {
             this.x += (dx / distance) * 1.5;
             this.y += (dy / distance) * 1.5;
+          } else {
+            capitalShip.takeDamage(1);
           }
         }
 
@@ -269,10 +337,14 @@
 
       // Game initialization
       const capitalShip = new CapitalShip(WORLD_WIDTH / 2, WORLD_HEIGHT / 2);
-      let fighters = [];
-      let miners = [];
+      let fighters = [new Fighter(capitalShip.x, capitalShip.y)]; // Start with 1 fighter
+      let miners = [new Miner(capitalShip.x, capitalShip.y)]; // Start with 1 miner
       let asteroids = [];
       let enemies = [];
+      let gameOver = false;
+      let waveTimer = 0;
+      let waveInterval = 1800; // Every 30 seconds (60 fps)
+      let waveWarningTime = 120; // 2 seconds warning
 
       // Controls
       const keys = {};
@@ -323,38 +395,31 @@
         );
       }
 
-      // Draw indicators
-      function drawAsteroidIndicators(cameraX, cameraY) {
-        if (asteroids.some((a) => a.resources > 0 && a.inRadarRange())) return;
-
-        asteroids.forEach((a) => {
-          if (a.resources <= 0) return;
-
-          const dx = a.x - capitalShip.x;
-          const dy = a.y - capitalShip.y;
-          const angle = Math.atan2(dy, dx);
-          const centerX = canvas.width / 2;
-          const centerY = canvas.height / 2;
-          const radius = Math.min(canvas.width, canvas.height) / 2 - 20;
-
-          let indicatorX = centerX + Math.cos(angle) * radius;
-          let indicatorY = centerY + Math.sin(angle) * radius;
-          indicatorX = Math.max(10, Math.min(canvas.width - 10, indicatorX));
-          indicatorY = Math.max(10, Math.min(canvas.height - 10, indicatorY));
-
-          ctx.fillStyle = "gray";
-          ctx.beginPath();
-          ctx.arc(indicatorX, indicatorY, 5, 0, Math.PI * 2);
-          ctx.fill();
-        });
+      // Spawn enemy wave
+      function spawnWave() {
+        const waveSize = Math.floor(Math.random() * 3) + 3; // 3-5 enemies
+        for (let i = 0; i < waveSize; i++) {
+          enemies.push(
+            new Enemy(
+              capitalShip.x +
+                (Math.random() > 0.5 ? WORLD_WIDTH : -WORLD_WIDTH),
+              capitalShip.y + (Math.random() - 0.5) * WORLD_HEIGHT
+            )
+          );
+        }
       }
 
-      function drawUnitIndicators(cameraX, cameraY, units, color) {
-        units.forEach((unit) => {
-          if (unit.inRadarRange()) return;
+      // Draw indicators
+      function drawIndicators(cameraX, cameraY, objects, color) {
+        objects.forEach((obj) => {
+          const inRange =
+            obj instanceof Asteroid
+              ? obj.inRadarRange() && obj.resources > 0
+              : obj.inRadarRange();
+          if (inRange) return;
 
-          const dx = unit.x - capitalShip.x;
-          const dy = unit.y - capitalShip.y;
+          const dx = obj.x - capitalShip.x;
+          const dy = obj.y - capitalShip.y;
           const angle = Math.atan2(dy, dx);
           const centerX = canvas.width / 2;
           const centerY = canvas.height / 2;
@@ -374,6 +439,11 @@
 
       // Game loop
       function gameLoop() {
+        if (gameOver) {
+          document.getElementById("gameOver").style.display = "block";
+          return;
+        }
+
         const cameraX = capitalShip.x - canvas.width / 2;
         const cameraY = capitalShip.y - canvas.height / 2;
 
@@ -397,6 +467,7 @@
         if (keys["b"]) buyFighter();
         if (keys["n"]) buyMiner();
 
+        capitalShip.regenerateShield();
         capitalShip.draw(cameraX, cameraY);
 
         // Manage fighters
@@ -418,26 +489,32 @@
         });
 
         // Update and draw asteroids
+        asteroids = asteroids.filter((a) => a.resources > 0);
         asteroids.forEach((a) => a.draw(cameraX, cameraY));
         if (Math.random() < 0.02 && asteroids.length < 20) {
           asteroids.push(
             new Asteroid(
-              capitalShip.x + (Math.random() - 0.5) * WORLD_WIDTH,
-              capitalShip.y + (Math.random() - 0.5) * WORLD_HEIGHT
+              Math.random() * WORLD_WIDTH,
+              Math.random() * WORLD_HEIGHT
             )
           );
         }
 
-        // Manage enemies
-        if (Math.random() < 0.01 && enemies.length < 5) {
-          enemies.push(
-            new Enemy(
-              capitalShip.x +
-                (Math.random() > 0.5 ? WORLD_WIDTH : -WORLD_WIDTH),
-              capitalShip.y + (Math.random() - 0.5) * WORLD_HEIGHT
-            )
-          );
+        // Manage enemies and waves
+        waveTimer++;
+        if (waveTimer >= waveInterval) {
+          spawnWave();
+          waveTimer = 0;
         }
+        if (
+          waveTimer >= waveInterval - waveWarningTime &&
+          waveTimer < waveInterval
+        ) {
+          document.getElementById("waveWarning").style.display = "block";
+        } else {
+          document.getElementById("waveWarning").style.display = "none";
+        }
+
         enemies = enemies.filter((e) => e.health > 0);
         enemies.forEach((e) => {
           e.update();
@@ -459,27 +536,14 @@
         }
 
         // Draw indicators
-        drawAsteroidIndicators(cameraX, cameraY);
-        drawUnitIndicators(cameraX, cameraY, fighters, "green");
-        drawUnitIndicators(cameraX, cameraY, miners, "yellow");
-
-        // Update warnings
-        let warningText = "";
-        const outOfRangeFighters = fighters.filter(
-          (f) => !f.inRadarRange()
-        ).length;
-        const outOfRangeMiners = miners.filter((m) => !m.inRadarRange()).length;
-        if (outOfRangeFighters > 0) {
-          warningText += `${outOfRangeFighters} Fighter${
-            outOfRangeFighters > 1 ? "s" : ""
-          } out of range!\n`;
-        }
-        if (outOfRangeMiners > 0) {
-          warningText += `${outOfRangeMiners} Miner${
-            outOfRangeMiners > 1 ? "s" : ""
-          } out of range!`;
-        }
-        document.getElementById("warnings").textContent = warningText;
+        drawIndicators(
+          cameraX,
+          cameraY,
+          asteroids.filter((a) => a.resources > 0),
+          "gray"
+        );
+        drawIndicators(cameraX, cameraY, fighters, "green");
+        drawIndicators(cameraX, cameraY, miners, "yellow");
 
         // Update UI
         document.getElementById("resources").textContent =
@@ -491,6 +555,16 @@
           miners.length
         } (Speed: ${miners[0]?.speed || 2})`;
         document.getElementById("radar").textContent = capitalShip.radarRange;
+        document.getElementById("health").textContent = Math.floor(
+          capitalShip.health
+        );
+        document.getElementById("maxHealth").textContent =
+          capitalShip.maxHealth;
+        document.getElementById("shield").textContent = Math.floor(
+          capitalShip.shield
+        );
+        document.getElementById("maxShield").textContent =
+          capitalShip.maxShield;
 
         requestAnimationFrame(gameLoop);
       }
