@@ -28,8 +28,8 @@
     <canvas id="gameCanvas" width="800" height="600"></canvas>
     <div id="info">
       <div>Resources: <span id="resources">0</span></div>
-      <div>Fighters: <span id="fighters">0</span> (F to upgrade)</div>
-      <div>Miners: <span id="miners">0</span> (M to upgrade)</div>
+      <div>Fighters: <span id="fighters">0</span> (F to upgrade, B to buy)</div>
+      <div>Miners: <span id="miners">0</span> (M to upgrade, N to buy)</div>
       <div>Radar: <span id="radar">0</span> (R to upgrade)</div>
     </div>
 
@@ -167,6 +167,15 @@
                   this.carrying++;
                 }
               }
+            } else {
+              // Follow capital ship when idle
+              const dx = capitalShip.x - this.x;
+              const dy = capitalShip.y - this.y;
+              const distance = Math.sqrt(dx * dx + dy * dy);
+              if (distance > 20) {
+                this.x += (dx / distance) * this.speed;
+                this.y += (dy / distance) * this.speed;
+              }
             }
           }
         }
@@ -209,7 +218,6 @@
 
         draw(cameraX, cameraY) {
           super.draw(cameraX, cameraY);
-          // Draw health bar
           const barWidth = 20;
           const barHeight = 3;
           ctx.fillStyle = "gray";
@@ -241,7 +249,7 @@
       document.addEventListener("keydown", (e) => (keys[e.key] = true));
       document.addEventListener("keyup", (e) => (keys[e.key] = false));
 
-      // Upgrades
+      // Upgrades and manufacturing
       function upgradeRadar() {
         if (capitalShip.resources >= 50) {
           capitalShip.resources -= 50;
@@ -263,6 +271,18 @@
         }
       }
 
+      function buyFighter() {
+        if (fighters.length < 10) {
+          capitalShip.manufacture("fighter");
+        }
+      }
+
+      function buyMiner() {
+        if (miners.length < 5) {
+          capitalShip.manufacture("miner");
+        }
+      }
+
       // Spawn initial asteroids
       for (let i = 0; i < 10; i++) {
         asteroids.push(
@@ -275,7 +295,6 @@
 
       // Game loop
       function gameLoop() {
-        // Camera follows capital ship
         const cameraX = capitalShip.x - canvas.width / 2;
         const cameraY = capitalShip.y - canvas.height / 2;
 
@@ -292,17 +311,14 @@
         if (keys["ArrowRight"] || keys["d"])
           capitalShip.move(capitalShip.speed, 0);
 
-        // Handle upgrades
+        // Handle upgrades and manufacturing
         if (keys["f"]) upgradeFighters();
         if (keys["m"]) upgradeMiners();
         if (keys["r"]) upgradeRadar();
+        if (keys["b"]) buyFighter();
+        if (keys["n"]) buyMiner();
 
-        // Draw objects
         capitalShip.draw(cameraX, cameraY);
-        if (Math.random() < 0.05 && capitalShip.fighterCount < 10)
-          capitalShip.manufacture("fighter");
-        if (Math.random() < 0.05 && capitalShip.minerCount < 5)
-          capitalShip.manufacture("miner");
 
         // Manage fighters
         if (fighters.length < capitalShip.fighterCount) {
