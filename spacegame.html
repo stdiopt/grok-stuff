@@ -1,408 +1,501 @@
 <!DOCTYPE html>
 <html>
-<head>
+  <head>
     <title>Space Radar Game</title>
     <style>
-        canvas {
-            border: 1px solid white;
-            background: black;
-        }
-        body {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            background: #111;
-        }
-        #info {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            color: white;
-            font-family: Arial;
-        }
+      canvas {
+        border: 1px solid white;
+        background: black;
+      }
+      body {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        margin: 0;
+        background: #111;
+      }
+      #info {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        color: white;
+        font-family: Arial;
+      }
+      #warnings {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        color: red;
+        font-family: Arial;
+        font-size: 20px;
+        text-align: center;
+        pointer-events: none;
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <canvas id="gameCanvas" width="800" height="600"></canvas>
     <div id="info">
-        <div>Resources: <span id="resources">0</span></div>
-        <div>Fighters: <span id="fighters">0</span> (F to upgrade, B to buy)</div>
-        <div>Miners: <span id="miners">0</span> (M to upgrade, N to buy)</div>
-        <div>Radar: <span id="radar">0</span> (R to upgrade)</div>
+      <div>Resources: <span id="resources">0</span></div>
+      <div>Fighters: <span id="fighters">0</span> (F to upgrade, B to buy)</div>
+      <div>Miners: <span id="miners">0</span> (M to upgrade, N to buy)</div>
+      <div>Radar: <span id="radar">0</span> (R to upgrade)</div>
     </div>
+    <div id="warnings"></div>
 
     <script>
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        const WORLD_WIDTH = 2000;
-        const WORLD_HEIGHT = 2000;
+      const canvas = document.getElementById("gameCanvas");
+      const ctx = canvas.getContext("2d");
+      const WORLD_WIDTH = 2000;
+      const WORLD_HEIGHT = 2000;
 
-        class GameObject {
-            constructor(x, y, size, color) {
-                this.x = x;
-                this.y = y;
-                this.size = size;
-                this.color = color;
-            }
-
-            draw(cameraX, cameraY) {
-                ctx.fillStyle = this.color;
-                ctx.beginPath();
-                ctx.arc(this.x - cameraX, this.y - cameraY, this.size, 0, Math.PI * 2);
-                ctx.fill();
-            }
-
-            inRadarRange() {
-                const dx = this.x - capitalShip.x;
-                const dy = this.y - capitalShip.y;
-                return Math.sqrt(dx * dx + dy * dy) <= capitalShip.radarRange;
-            }
+      class GameObject {
+        constructor(x, y, size, color) {
+          this.x = x;
+          this.y = y;
+          this.size = size;
+          this.color = color;
         }
 
-        class CapitalShip extends GameObject {
-            constructor(x, y) {
-                super(x, y, 20, 'cyan');
-                this.resources = 100;
-                this.fighterCount = 0;
-                this.minerCount = 0;
-                this.radarRange = 200;
-                this.speed = 3;
-            }
-
-            manufacture(type) {
-                if (this.resources >= 20) {
-                    this.resources -= 20;
-                    if (type === 'fighter') this.fighterCount++;
-                    else if (type === 'miner') this.minerCount++;
-                }
-            }
-
-            move(dx, dy) {
-                this.x = Math.max(20, Math.min(WORLD_WIDTH - 20, this.x + dx));
-                this.y = Math.max(20, Math.min(WORLD_HEIGHT - 20, this.y + dy));
-            }
+        draw(cameraX, cameraY) {
+          ctx.fillStyle = this.color;
+          ctx.beginPath();
+          ctx.arc(
+            this.x - cameraX,
+            this.y - cameraY,
+            this.size,
+            0,
+            Math.PI * 2
+          );
+          ctx.fill();
         }
 
-        class Fighter extends GameObject {
-            constructor(x, y) {
-                super(x, y, 5, 'green');
-                this.target = null;
-                this.power = 1;
-            }
+        inRadarRange() {
+          const dx = this.x - capitalShip.x;
+          const dy = this.y - capitalShip.y;
+          return Math.sqrt(dx * dx + dy * dy) <= capitalShip.radarRange;
+        }
+      }
 
-            update(enemies, fighters) {
-                if (!this.inRadarRange()) return;
-
-                if (this.target && this.target.health > 0) {
-                    const dx = this.target.x - this.x;
-                    const dy = this.target.y - this.y;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
-                    if (distance > 5) {
-                        this.x += dx / distance * 2;
-                        this.y += dy / distance * 2;
-                    } else {
-                        this.target.health -= this.power;
-                    }
-                } else {
-                    // Count how many fighters are targeting each enemy
-                    const targetCount = {};
-                    fighters.forEach(f => {
-                        if (f.target && f.target.health > 0) {
-                            targetCount[f.target.x + ',' + f.target.y] = 
-                                (targetCount[f.target.x + ',' + f.target.y] || 0) + 1;
-                        }
-                    });
-
-                    // Find least-targeted enemy in range
-                    this.target = enemies
-                        .filter(e => e.health > 0 && e.inRadarRange())
-                        .sort((a, b) => {
-                            const aCount = targetCount[a.x + ',' + a.y] || 0;
-                            const bCount = targetCount[b.x + ',' + b.y] || 0;
-                            return aCount - bCount || 
-                                Math.hypot(a.x - this.x, a.y - this.y) - 
-                                Math.hypot(b.x - this.x, b.y - this.y);
-                        })[0];
-
-                    if (!this.target) {
-                        const dx = capitalShip.x - this.x;
-                        const dy = capitalShip.y - this.y;
-                        const distance = Math.sqrt(dx * dx + dy * dy);
-                        if (distance > 20) {
-                            this.x += dx / distance * 2;
-                            this.y += dy / distance * 2;
-                        }
-                    }
-                }
-            }
+      class CapitalShip extends GameObject {
+        constructor(x, y) {
+          super(x, y, 20, "cyan");
+          this.resources = 100;
+          this.fighterCount = 0;
+          this.minerCount = 0;
+          this.radarRange = 200;
+          this.speed = 3;
         }
 
-        class Miner extends GameObject {
-            constructor(x, y) {
-                super(x, y, 5, 'yellow');
-                this.target = null;
-                this.carrying = 0;
-                this.speed = 2;
-            }
-
-            update(asteroids) {
-                if (!this.inRadarRange()) return;
-
-                if (this.carrying > 0) {
-                    const dx = capitalShip.x - this.x;
-                    const dy = capitalShip.y - this.y;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
-                    if (distance > 20) {
-                        this.x += dx / distance * this.speed;
-                        this.y += dy / distance * this.speed;
-                    } else {
-                        capitalShip.resources += this.carrying;
-                        this.carrying = 0;
-                    }
-                } else {
-                    if (!this.target || this.target.resources <= 0) {
-                        this.target = asteroids.find(a => a.resources > 0 && a.inRadarRange());
-                    }
-                    if (this.target) {
-                        const dx = this.target.x - this.x;
-                        const dy = this.target.y - this.y;
-                        const distance = Math.sqrt(dx * dx + dy * dy);
-                        if (distance > 5) {
-                            this.x += dx / distance * this.speed;
-                            this.y += dy / distance * this.speed;
-                        } else {
-                            if (this.target.resources > 0) {
-                                this.target.resources--;
-                                this.carrying++;
-                            }
-                        }
-                    } else {
-                        const dx = capitalShip.x - this.x;
-                        const dy = capitalShip.y - this.y;
-                        const distance = Math.sqrt(dx * dx + dy * dy);
-                        if (distance > 20) {
-                            this.x += dx / distance * this.speed;
-                            this.y += dy / distance * this.speed;
-                        }
-                    }
-                }
-            }
+        manufacture(type) {
+          if (this.resources >= 20) {
+            this.resources -= 20;
+            if (type === "fighter") this.fighterCount++;
+            else if (type === "miner") this.minerCount++;
+          }
         }
 
-        class Asteroid extends GameObject {
-            constructor(x, y) {
-                super(x, y, 10, 'gray');
-                this.resources = 50;
-            }
+        move(dx, dy) {
+          this.x = Math.max(20, Math.min(WORLD_WIDTH - 20, this.x + dx));
+          this.y = Math.max(20, Math.min(WORLD_HEIGHT - 20, this.y + dy));
+        }
+      }
 
-            draw(cameraX, cameraY) {
-                super.draw(cameraX, cameraY);
-                ctx.fillStyle = 'white';
-                ctx.font = '10px Arial';
-                ctx.fillText(this.resources, this.x - cameraX - 5, this.y - cameraY - 15);
-            }
+      class Fighter extends GameObject {
+        constructor(x, y) {
+          super(x, y, 5, "green");
+          this.target = null;
+          this.power = 1;
         }
 
-        class Enemy extends GameObject {
-            constructor(x, y) {
-                super(x, y, 8, 'red');
-                this.health = 10;
-                this.maxHealth = 10;
+        update(enemies, fighters) {
+          if (!this.inRadarRange()) return;
+
+          if (this.target && this.target.health > 0) {
+            const dx = this.target.x - this.x;
+            const dy = this.target.y - this.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            if (distance > 5) {
+              this.x += (dx / distance) * 2;
+              this.y += (dy / distance) * 2;
+            } else {
+              this.target.health -= this.power;
             }
-
-            update() {
-                const dx = capitalShip.x - this.x;
-                const dy = capitalShip.y - this.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                if (distance > 20) {
-                    this.x += dx / distance * 1.5;
-                    this.y += dy / distance * 1.5;
-                }
-            }
-
-            draw(cameraX, cameraY) {
-                super.draw(cameraX, cameraY);
-                const barWidth = 20;
-                const barHeight = 3;
-                ctx.fillStyle = 'gray';
-                ctx.fillRect(this.x - cameraX - barWidth/2, this.y - cameraY - 15, barWidth, barHeight);
-                ctx.fillStyle = 'green';
-                ctx.fillRect(this.x - cameraX - barWidth/2, this.y - cameraY - 15, 
-                    barWidth * (this.health/this.maxHealth), barHeight);
-            }
-        }
-
-        // Game initialization
-        const capitalShip = new CapitalShip(WORLD_WIDTH/2, WORLD_HEIGHT/2);
-        let fighters = [];
-        let miners = [];
-        let asteroids = [];
-        let enemies = [];
-
-        // Controls
-        const keys = {};
-        document.addEventListener('keydown', (e) => keys[e.key] = true);
-        document.addEventListener('keyup', (e) => keys[e.key] = false);
-
-        // Upgrades and manufacturing
-        function upgradeRadar() {
-            if (capitalShip.resources >= 50) {
-                capitalShip.resources -= 50;
-                capitalShip.radarRange += 50;
-            }
-        }
-
-        function upgradeFighters() {
-            if (capitalShip.resources >= 50) {
-                capitalShip.resources -= 50;
-                fighters.forEach(f => f.power += 0.5);
-            }
-        }
-
-        function upgradeMiners() {
-            if (capitalShip.resources >= 50) {
-                capitalShip.resources -= 50;
-                miners.forEach(m => m.speed += 0.5);
-            }
-        }
-
-        function buyFighter() {
-            if (fighters.length < 10) {
-                capitalShip.manufacture('fighter');
-            }
-        }
-
-        function buyMiner() {
-            if (miners.length < 5) {
-                capitalShip.manufacture('miner');
-            }
-        }
-
-        // Spawn initial asteroids
-        for (let i = 0; i < 10; i++) {
-            asteroids.push(new Asteroid(
-                Math.random() * WORLD_WIDTH,
-                Math.random() * WORLD_HEIGHT
-            ));
-        }
-
-        // Draw asteroid indicators
-        function drawAsteroidIndicators(cameraX, cameraY) {
-            if (asteroids.some(a => a.resources > 0 && a.inRadarRange())) return;
-
-            asteroids.forEach(a => {
-                if (a.resources <= 0) return;
-
-                const dx = a.x - capitalShip.x;
-                const dy = a.y - capitalShip.y;
-                const angle = Math.atan2(dy, dx);
-                
-                // Project to screen edge
-                const centerX = canvas.width/2;
-                const centerY = canvas.height/2;
-                const radius = Math.min(canvas.width, canvas.height)/2 - 20;
-                
-                let indicatorX = centerX + Math.cos(angle) * radius;
-                let indicatorY = centerY + Math.sin(angle) * radius;
-
-                // Clamp to screen edges
-                indicatorX = Math.max(10, Math.min(canvas.width - 10, indicatorX));
-                indicatorY = Math.max(10, Math.min(canvas.height - 10, indicatorY));
-
-                ctx.fillStyle = 'gray';
-                ctx.beginPath();
-                ctx.arc(indicatorX, indicatorY, 5, 0, Math.PI * 2);
-                ctx.fill();
-            });
-        }
-
-        // Game loop
-        function gameLoop() {
-            const cameraX = capitalShip.x - canvas.width/2;
-            const cameraY = capitalShip.y - canvas.height/2;
-
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            // Handle movement
-            if (keys['ArrowUp'] || keys['w']) capitalShip.move(0, -capitalShip.speed);
-            if (keys['ArrowDown'] || keys['s']) capitalShip.move(0, capitalShip.speed);
-            if (keys['ArrowLeft'] || keys['a']) capitalShip.move(-capitalShip.speed, 0);
-            if (keys['ArrowRight'] || keys['d']) capitalShip.move(capitalShip.speed, 0);
-
-            // Handle upgrades and manufacturing
-            if (keys['f']) upgradeFighters();
-            if (keys['m']) upgradeMiners();
-            if (keys['r']) upgradeRadar();
-            if (keys['b']) buyFighter();
-            if (keys['n']) buyMiner();
-
-            capitalShip.draw(cameraX, cameraY);
-
-            // Manage fighters
-            if (fighters.length < capitalShip.fighterCount) {
-                fighters.push(new Fighter(capitalShip.x, capitalShip.y));
-            }
-            fighters.forEach(f => {
-                f.update(enemies, fighters);
-                f.draw(cameraX, cameraY);
+          } else {
+            const targetCount = {};
+            fighters.forEach((f) => {
+              if (f.target && f.target.health > 0) {
+                targetCount[f.target.x + "," + f.target.y] =
+                  (targetCount[f.target.x + "," + f.target.y] || 0) + 1;
+              }
             });
 
-            // Manage miners
-            if (miners.length < capitalShip.minerCount) {
-                miners.push(new Miner(capitalShip.x, capitalShip.y));
+            this.target = enemies
+              .filter((e) => e.health > 0 && e.inRadarRange())
+              .sort((a, b) => {
+                const aCount = targetCount[a.x + "," + a.y] || 0;
+                const bCount = targetCount[b.x + "," + b.y] || 0;
+                return (
+                  aCount - bCount ||
+                  Math.hypot(a.x - this.x, a.y - this.y) -
+                    Math.hypot(b.x - this.x, b.y - this.y)
+                );
+              })[0];
+
+            if (!this.target) {
+              const dx = capitalShip.x - this.x;
+              const dy = capitalShip.y - this.y;
+              const distance = Math.sqrt(dx * dx + dy * dy);
+              if (distance > 20) {
+                this.x += (dx / distance) * 2;
+                this.y += (dy / distance) * 2;
+              }
             }
-            miners.forEach(m => {
-                m.update(asteroids);
-                m.draw(cameraX, cameraY);
-            });
+          }
+        }
+      }
 
-            // Update and draw asteroids
-            asteroids.forEach(a => a.draw(cameraX, cameraY));
-            if (Math.random() < 0.02 && asteroids.length < 20) {
-                asteroids.push(new Asteroid(
-                    capitalShip.x + (Math.random() - 0.5) * WORLD_WIDTH,
-                    capitalShip.y + (Math.random() - 0.5) * WORLD_HEIGHT
-                ));
-            }
-
-            // Manage enemies
-            if (Math.random() < 0.01 && enemies.length < 5) {
-                enemies.push(new Enemy(
-                    capitalShip.x + (Math.random() > 0.5 ? WORLD_WIDTH : -WORLD_WIDTH),
-                    capitalShip.y + (Math.random() - 0.5) * WORLD_HEIGHT
-                ));
-            }
-            enemies = enemies.filter(e => e.health > 0);
-            enemies.forEach(e => {
-                e.update();
-                e.draw(cameraX, cameraY);
-            });
-
-            // Draw radar rings
-            ctx.strokeStyle = 'rgba(0, 255, 0, 0.3)';
-            for (let i = 1; i <= 4; i++) {
-                ctx.beginPath();
-                ctx.arc(canvas.width/2, canvas.height/2, 
-                    capitalShip.radarRange * (i/4), 0, Math.PI * 2);
-                ctx.stroke();
-            }
-
-            // Draw asteroid indicators
-            drawAsteroidIndicators(cameraX, cameraY);
-
-            // Update UI
-            document.getElementById('resources').textContent = capitalShip.resources;
-            document.getElementById('fighters').textContent = `${fighters.length} (Power: ${fighters[0]?.power || 1})`;
-            document.getElementById('miners').textContent = `${miners.length} (Speed: ${miners[0]?.speed || 2})`;
-            document.getElementById('radar').textContent = capitalShip.radarRange;
-
-            requestAnimationFrame(gameLoop);
+      class Miner extends GameObject {
+        constructor(x, y) {
+          super(x, y, 5, "yellow");
+          this.target = null;
+          this.carrying = 0;
+          this.speed = 2;
         }
 
-        gameLoop();
+        update(asteroids) {
+          if (!this.inRadarRange()) return;
+
+          if (this.carrying > 0) {
+            const dx = capitalShip.x - this.x;
+            const dy = capitalShip.y - this.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            if (distance > 20) {
+              this.x += (dx / distance) * this.speed;
+              this.y += (dy / distance) * this.speed;
+            } else {
+              capitalShip.resources += this.carrying;
+              this.carrying = 0;
+            }
+          } else {
+            if (!this.target || this.target.resources <= 0) {
+              this.target = asteroids.find(
+                (a) => a.resources > 0 && a.inRadarRange()
+              );
+            }
+            if (this.target) {
+              const dx = this.target.x - this.x;
+              const dy = this.target.y - this.y;
+              const distance = Math.sqrt(dx * dx + dy * dy);
+              if (distance > 5) {
+                this.x += (dx / distance) * this.speed;
+                this.y += (dy / distance) * this.speed;
+              } else {
+                if (this.target.resources > 0) {
+                  this.target.resources--;
+                  this.carrying++;
+                }
+              }
+            } else {
+              const dx = capitalShip.x - this.x;
+              const dy = capitalShip.y - this.y;
+              const distance = Math.sqrt(dx * dx + dy * dy);
+              if (distance > 20) {
+                this.x += (dx / distance) * this.speed;
+                this.y += (dy / distance) * this.speed;
+              }
+            }
+          }
+        }
+      }
+
+      class Asteroid extends GameObject {
+        constructor(x, y) {
+          super(x, y, 10, "gray");
+          this.resources = 50;
+        }
+
+        draw(cameraX, cameraY) {
+          super.draw(cameraX, cameraY);
+          ctx.fillStyle = "white";
+          ctx.font = "10px Arial";
+          ctx.fillText(
+            this.resources,
+            this.x - cameraX - 5,
+            this.y - cameraY - 15
+          );
+        }
+      }
+
+      class Enemy extends GameObject {
+        constructor(x, y) {
+          super(x, y, 8, "red");
+          this.health = 10;
+          this.maxHealth = 10;
+        }
+
+        update() {
+          const dx = capitalShip.x - this.x;
+          const dy = capitalShip.y - this.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          if (distance > 20) {
+            this.x += (dx / distance) * 1.5;
+            this.y += (dy / distance) * 1.5;
+          }
+        }
+
+        draw(cameraX, cameraY) {
+          super.draw(cameraX, cameraY);
+          const barWidth = 20;
+          const barHeight = 3;
+          ctx.fillStyle = "gray";
+          ctx.fillRect(
+            this.x - cameraX - barWidth / 2,
+            this.y - cameraY - 15,
+            barWidth,
+            barHeight
+          );
+          ctx.fillStyle = "green";
+          ctx.fillRect(
+            this.x - cameraX - barWidth / 2,
+            this.y - cameraY - 15,
+            barWidth * (this.health / this.maxHealth),
+            barHeight
+          );
+        }
+      }
+
+      // Game initialization
+      const capitalShip = new CapitalShip(WORLD_WIDTH / 2, WORLD_HEIGHT / 2);
+      let fighters = [];
+      let miners = [];
+      let asteroids = [];
+      let enemies = [];
+
+      // Controls
+      const keys = {};
+      document.addEventListener("keydown", (e) => (keys[e.key] = true));
+      document.addEventListener("keyup", (e) => (keys[e.key] = false));
+
+      // Upgrades and manufacturing
+      function upgradeRadar() {
+        if (capitalShip.resources >= 50) {
+          capitalShip.resources -= 50;
+          capitalShip.radarRange += 50;
+        }
+      }
+
+      function upgradeFighters() {
+        if (capitalShip.resources >= 50) {
+          capitalShip.resources -= 50;
+          fighters.forEach((f) => (f.power += 0.5));
+        }
+      }
+
+      function upgradeMiners() {
+        if (capitalShip.resources >= 50) {
+          capitalShip.resources -= 50;
+          miners.forEach((m) => (m.speed += 0.5));
+        }
+      }
+
+      function buyFighter() {
+        if (fighters.length < 10) {
+          capitalShip.manufacture("fighter");
+        }
+      }
+
+      function buyMiner() {
+        if (miners.length < 5) {
+          capitalShip.manufacture("miner");
+        }
+      }
+
+      // Spawn initial asteroids
+      for (let i = 0; i < 10; i++) {
+        asteroids.push(
+          new Asteroid(
+            Math.random() * WORLD_WIDTH,
+            Math.random() * WORLD_HEIGHT
+          )
+        );
+      }
+
+      // Draw indicators
+      function drawAsteroidIndicators(cameraX, cameraY) {
+        if (asteroids.some((a) => a.resources > 0 && a.inRadarRange())) return;
+
+        asteroids.forEach((a) => {
+          if (a.resources <= 0) return;
+
+          const dx = a.x - capitalShip.x;
+          const dy = a.y - capitalShip.y;
+          const angle = Math.atan2(dy, dx);
+          const centerX = canvas.width / 2;
+          const centerY = canvas.height / 2;
+          const radius = Math.min(canvas.width, canvas.height) / 2 - 20;
+
+          let indicatorX = centerX + Math.cos(angle) * radius;
+          let indicatorY = centerY + Math.sin(angle) * radius;
+          indicatorX = Math.max(10, Math.min(canvas.width - 10, indicatorX));
+          indicatorY = Math.max(10, Math.min(canvas.height - 10, indicatorY));
+
+          ctx.fillStyle = "gray";
+          ctx.beginPath();
+          ctx.arc(indicatorX, indicatorY, 5, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      }
+
+      function drawUnitIndicators(cameraX, cameraY, units, color) {
+        units.forEach((unit) => {
+          if (unit.inRadarRange()) return;
+
+          const dx = unit.x - capitalShip.x;
+          const dy = unit.y - capitalShip.y;
+          const angle = Math.atan2(dy, dx);
+          const centerX = canvas.width / 2;
+          const centerY = canvas.height / 2;
+          const radius = Math.min(canvas.width, canvas.height) / 2 - 20;
+
+          let indicatorX = centerX + Math.cos(angle) * radius;
+          let indicatorY = centerY + Math.sin(angle) * radius;
+          indicatorX = Math.max(10, Math.min(canvas.width - 10, indicatorX));
+          indicatorY = Math.max(10, Math.min(canvas.height - 10, indicatorY));
+
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.arc(indicatorX, indicatorY, 5, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      }
+
+      // Game loop
+      function gameLoop() {
+        const cameraX = capitalShip.x - canvas.width / 2;
+        const cameraY = capitalShip.y - canvas.height / 2;
+
+        ctx.fillStyle = "rgba(0, 0, 0, 0.1)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Handle movement
+        if (keys["ArrowUp"] || keys["w"])
+          capitalShip.move(0, -capitalShip.speed);
+        if (keys["ArrowDown"] || keys["s"])
+          capitalShip.move(0, capitalShip.speed);
+        if (keys["ArrowLeft"] || keys["a"])
+          capitalShip.move(-capitalShip.speed, 0);
+        if (keys["ArrowRight"] || keys["d"])
+          capitalShip.move(capitalShip.speed, 0);
+
+        // Handle upgrades and manufacturing
+        if (keys["f"]) upgradeFighters();
+        if (keys["m"]) upgradeMiners();
+        if (keys["r"]) upgradeRadar();
+        if (keys["b"]) buyFighter();
+        if (keys["n"]) buyMiner();
+
+        capitalShip.draw(cameraX, cameraY);
+
+        // Manage fighters
+        if (fighters.length < capitalShip.fighterCount) {
+          fighters.push(new Fighter(capitalShip.x, capitalShip.y));
+        }
+        fighters.forEach((f) => {
+          f.update(enemies, fighters);
+          f.draw(cameraX, cameraY);
+        });
+
+        // Manage miners
+        if (miners.length < capitalShip.minerCount) {
+          miners.push(new Miner(capitalShip.x, capitalShip.y));
+        }
+        miners.forEach((m) => {
+          m.update(asteroids);
+          m.draw(cameraX, cameraY);
+        });
+
+        // Update and draw asteroids
+        asteroids.forEach((a) => a.draw(cameraX, cameraY));
+        if (Math.random() < 0.02 && asteroids.length < 20) {
+          asteroids.push(
+            new Asteroid(
+              capitalShip.x + (Math.random() - 0.5) * WORLD_WIDTH,
+              capitalShip.y + (Math.random() - 0.5) * WORLD_HEIGHT
+            )
+          );
+        }
+
+        // Manage enemies
+        if (Math.random() < 0.01 && enemies.length < 5) {
+          enemies.push(
+            new Enemy(
+              capitalShip.x +
+                (Math.random() > 0.5 ? WORLD_WIDTH : -WORLD_WIDTH),
+              capitalShip.y + (Math.random() - 0.5) * WORLD_HEIGHT
+            )
+          );
+        }
+        enemies = enemies.filter((e) => e.health > 0);
+        enemies.forEach((e) => {
+          e.update();
+          e.draw(cameraX, cameraY);
+        });
+
+        // Draw radar rings
+        ctx.strokeStyle = "rgba(0, 255, 0, 0.3)";
+        for (let i = 1; i <= 4; i++) {
+          ctx.beginPath();
+          ctx.arc(
+            canvas.width / 2,
+            canvas.height / 2,
+            capitalShip.radarRange * (i / 4),
+            0,
+            Math.PI * 2
+          );
+          ctx.stroke();
+        }
+
+        // Draw indicators
+        drawAsteroidIndicators(cameraX, cameraY);
+        drawUnitIndicators(cameraX, cameraY, fighters, "green");
+        drawUnitIndicators(cameraX, cameraY, miners, "yellow");
+
+        // Update warnings
+        let warningText = "";
+        const outOfRangeFighters = fighters.filter(
+          (f) => !f.inRadarRange()
+        ).length;
+        const outOfRangeMiners = miners.filter((m) => !m.inRadarRange()).length;
+        if (outOfRangeFighters > 0) {
+          warningText += `${outOfRangeFighters} Fighter${
+            outOfRangeFighters > 1 ? "s" : ""
+          } out of range!\n`;
+        }
+        if (outOfRangeMiners > 0) {
+          warningText += `${outOfRangeMiners} Miner${
+            outOfRangeMiners > 1 ? "s" : ""
+          } out of range!`;
+        }
+        document.getElementById("warnings").textContent = warningText;
+
+        // Update UI
+        document.getElementById("resources").textContent =
+          capitalShip.resources;
+        document.getElementById("fighters").textContent = `${
+          fighters.length
+        } (Power: ${fighters[0]?.power || 1})`;
+        document.getElementById("miners").textContent = `${
+          miners.length
+        } (Speed: ${miners[0]?.speed || 2})`;
+        document.getElementById("radar").textContent = capitalShip.radarRange;
+
+        requestAnimationFrame(gameLoop);
+      }
+
+      gameLoop();
     </script>
-</body>
+  </body>
 </html>
